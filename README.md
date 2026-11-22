@@ -39,6 +39,7 @@ without calling Discord.
 ## Checks
 
 ```bash
+uv run pytest             # 7 tests, no network
 uvx ruff check .          # every ruff rule, four documented ignores
 uvx ruff format --check .
 uvx ty check

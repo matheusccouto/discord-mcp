@@ -72,17 +72,18 @@ def bot_token() -> str:
     return token
 
 
-def build() -> FastMCP:
+def build(client: httpx2.AsyncClient | None = None) -> FastMCP:
     """Build the MCP server from the filtered spec and a Discord client."""
     spec = read_spec()
-    client = httpx2.AsyncClient(
-        base_url=API_ROOT,
-        headers={
-            "Authorization": f"Bot {bot_token()}",
-            "User-Agent": "discord-mcp (1.0)",
-        },
-        timeout=20,
-    )
+    if client is None:
+        client = httpx2.AsyncClient(
+            base_url=API_ROOT,
+            headers={
+                "Authorization": f"Bot {bot_token()}",
+                "User-Agent": "discord-mcp (1.0)",
+            },
+            timeout=20,
+        )
     return FastMCP.from_openapi(
         openapi_spec=filtered(spec, chosen_families(spec)),
         client=client,
@@ -90,7 +91,5 @@ def build() -> FastMCP:
     )
 
 
-mcp = build()
-
 if __name__ == "__main__":
-    mcp.run()  # transport comes from FASTMCP_TRANSPORT; the Gateway injects http
+    build().run()  # transport comes from FASTMCP_TRANSPORT; the Gateway injects http
