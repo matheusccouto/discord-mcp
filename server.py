@@ -5,7 +5,7 @@ families: everything under /channels and /users, nothing else. Publishing it on
 FastMCP Gateway adds HTTPS, OAuth and a per-call log; this file only talks to Discord.
 
 Env:
-  DISCORD_BOT_TOKEN  required at call time
+  DISCORD_BOT_TOKEN  required, read at build time
   DISCORD_FAMILIES   optional, comma separated path families (default: channels,users)
 """
 
@@ -23,38 +23,59 @@ API_ROOT = "https://discord.com/api/v10"
 DEFAULT_FAMILIES = ("channels", "users")
 
 
-def families() -> list[str]:
-    """Path families to expose: the first segment of the route, e.g. /channels/{id}."""
-    raw = os.environ.get("DISCORD_FAMILIES", "")
-    chosen = [name.strip() for name in raw.split(",") if name.strip()]
-    return chosen or list(DEFAULT_FAMILIES)
+def read_spec() -> dict:
+    return json.loads(SPEC_PATH.read_text())
 
 
-def filtered_spec(families: list[str]) -> dict:
+def family_of(route: str) -> str:
+    """The first segment of a route: /channels/{id}/messages belongs to channels."""
+    return route.strip("/").split("/")[0]
+
+
+def chosen_families(spec: dict) -> list[str]:
+    """The families to expose, refusing names the spec does not have."""
+    requested = [name.strip() for name in os.environ.get("DISCORD_FAMILIES", "").split(",")]
+    families = [name for name in requested if name]
+    if not families:
+        return list(DEFAULT_FAMILIES)
+
+    available = {family_of(route) for route in spec["paths"]}
+    unknown = sorted(set(families) - available)
+    if unknown:
+        raise ValueError(f"unknown DISCORD_FAMILIES {unknown}; available: {sorted(available)}")
+    return families
+
+
+def filtered(spec: dict, families: list[str]) -> dict:
     """The spec with only the chosen families kept.
 
-    Cutting before parsing also skips routes FastMCP's validator rejects, like the
-    empty enums Discord ships under /guilds.
+    Cutting before parsing also avoids routes FastMCP's validator rejects: Discord
+    ships empty enums under /guilds, so asking for that family fails the build.
     """
-    spec = json.loads(SPEC_PATH.read_text())
-    prefixes = tuple(f"/{name}/" for name in families)
     spec["paths"] = {
         route: operations
         for route, operations in spec["paths"].items()
-        if route.startswith(prefixes)
+        if family_of(route) in families
     }
     return spec
 
 
+def bot_token() -> str:
+    token = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
+    if not token:
+        raise RuntimeError("DISCORD_BOT_TOKEN is not set")
+    return token
+
+
 def build() -> FastMCP:
-    token = os.environ.get("DISCORD_BOT_TOKEN", "")
+    spec = read_spec()
     client = httpx2.AsyncClient(
         base_url=API_ROOT,
-        headers={"Authorization": f"Bot {token}", "User-Agent": "discord-mcp (1.0)"},
+        headers={"Authorization": f"Bot {bot_token()}", "User-Agent": "discord-mcp (1.0)"},
         timeout=20,
     )
     return FastMCP.from_openapi(
-        openapi_spec=filtered_spec(families()),
+        openapi_spec=filtered(spec, chosen_families(spec)),
         client=client,
         name="discord",
     )

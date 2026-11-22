@@ -13,8 +13,13 @@ Change it with `DISCORD_FAMILIES`, comma separated. Family is the first segment 
 route, so `/channels/{channel_id}/messages` belongs to `channels`:
 
 ```bash
-DISCORD_FAMILIES=channels,guilds,users
+DISCORD_FAMILIES=channels,users
 ```
+
+An unknown family fails the build and lists the available ones, so a typo cannot
+quietly produce a server with no tools. `guilds` is a valid family name but currently
+fails the parser: Discord's spec ships empty enums under `/guilds/{guild_id}/requests`
+that FastMCP's validator rejects.
 
 The spec is vendored in `discord-openapi.json`, taken from
 [discord/discord-api-spec](https://github.com/discord/discord-api-spec). To refresh it,
