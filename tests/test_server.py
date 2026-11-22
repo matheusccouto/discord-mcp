@@ -8,6 +8,9 @@ from fastmcp import Client
 
 import server
 
+# 50 operations under /channels plus 12 under /users in the vendored spec.
+DEFAULT_TOOL_COUNT = 62
+
 # Every field MessageResponse marks as required, so FastMCP's output validation
 # accepts the fake reply instead of failing before the request is inspected.
 DISCORD_MESSAGE = {
@@ -73,14 +76,11 @@ def test_missing_token_refuses_to_build(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.delenv("DISCORD_BOT_TOKEN", raising=False)
 
     with pytest.raises(RuntimeError, match="DISCORD_BOT_TOKEN"):
-        server.bot_token()
+        server.build()
 
 
-async def test_create_message_posts_to_the_channel(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_create_message_posts_to_the_channel() -> None:
     """Send the tool call to Discord as a POST on the channel's message route."""
-    monkeypatch.setenv("DISCORD_BOT_TOKEN", "test-token")
     seen = {}
 
     def handler(request: httpx2.Request) -> httpx2.Response:
@@ -102,11 +102,21 @@ async def test_create_message_posts_to_the_channel(
     assert seen["body"] == {"content": "oi"}
 
 
-async def test_client_sees_only_the_chosen_family(
+async def test_deployed_server_exposes_the_default_families() -> None:
+    """Serve the two default families on the object the Gateway loads."""
+    async with Client(server.mcp) as mcp_client:
+        names = {tool.name for tool in await mcp_client.list_tools()}
+
+    assert "create_message" in names
+    assert len(names) == DEFAULT_TOOL_COUNT
+    assert "get_guild" not in names
+    assert "execute_webhook" not in names
+
+
+async def test_narrower_surface_drops_the_other_family(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """List tools of the chosen family and none of the others."""
-    monkeypatch.setenv("DISCORD_BOT_TOKEN", "test-token")
+    """Answer a narrower DISCORD_FAMILIES with fewer tools."""
     monkeypatch.setenv("DISCORD_FAMILIES", "users")
 
     async with Client(server.build()) as mcp_client:

@@ -3,7 +3,7 @@
   "source": {
     "type": "filesystem",
     "path": "server.py",
-    "entrypoint": "build"
+    "entrypoint": "mcp"
   },
   "environment": {
     "type": "uv",

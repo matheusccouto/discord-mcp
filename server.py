@@ -91,5 +91,7 @@ def build(client: httpx2.AsyncClient | None = None) -> FastMCP:
     )
 
 
+mcp = build()
+
 if __name__ == "__main__":
-    build().run()  # transport comes from FASTMCP_TRANSPORT; the Gateway injects http
+    mcp.run()  # transport comes from FASTMCP_TRANSPORT; the Gateway injects http
