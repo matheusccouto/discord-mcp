@@ -36,6 +36,14 @@ DISCORD_BOT_TOKEN=... uv run fastmcp run fastmcp.json --transport http
 `pyproject.toml` through uv. `uv run fastmcp inspect fastmcp.json` lists the tools
 without calling Discord.
 
+## Checks
+
+```bash
+uvx ruff check .          # every ruff rule, four documented ignores
+uvx ruff format --check .
+uvx ty check
+```
+
 ## Deploy on FastMCP Gateway
 
 Point the Gateway at this repository and set the environment:

@@ -24,17 +24,19 @@ DEFAULT_FAMILIES = ("channels", "users")
 
 
 def read_spec() -> dict:
+    """Return the vendored OpenAPI document."""
     return json.loads(SPEC_PATH.read_text())
 
 
 def family_of(route: str) -> str:
-    """The first segment of a route: /channels/{id}/messages belongs to channels."""
+    """Return the family of a route: /channels/{id}/messages belongs to channels."""
     return route.strip("/").split("/")[0]
 
 
 def chosen_families(spec: dict) -> list[str]:
-    """The families to expose, refusing names the spec does not have."""
-    requested = [name.strip() for name in os.environ.get("DISCORD_FAMILIES", "").split(",")]
+    """Return the families to expose, refusing names the spec does not have."""
+    raw = os.environ.get("DISCORD_FAMILIES", "")
+    requested = [name.strip() for name in raw.split(",")]
     families = [name for name in requested if name]
     if not families:
         return list(DEFAULT_FAMILIES)
@@ -42,12 +44,13 @@ def chosen_families(spec: dict) -> list[str]:
     available = {family_of(route) for route in spec["paths"]}
     unknown = sorted(set(families) - available)
     if unknown:
-        raise ValueError(f"unknown DISCORD_FAMILIES {unknown}; available: {sorted(available)}")
+        msg = f"unknown DISCORD_FAMILIES {unknown}; available: {sorted(available)}"
+        raise ValueError(msg)
     return families
 
 
 def filtered(spec: dict, families: list[str]) -> dict:
-    """The spec with only the chosen families kept.
+    """Return the spec with only the chosen families kept.
 
     Cutting before parsing also avoids routes FastMCP's validator rejects: Discord
     ships empty enums under /guilds, so asking for that family fails the build.
@@ -61,17 +64,23 @@ def filtered(spec: dict, families: list[str]) -> dict:
 
 
 def bot_token() -> str:
+    """Return the bot token, refusing to run without one."""
     token = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
     if not token:
-        raise RuntimeError("DISCORD_BOT_TOKEN is not set")
+        msg = "DISCORD_BOT_TOKEN is not set"
+        raise RuntimeError(msg)
     return token
 
 
 def build() -> FastMCP:
+    """Build the MCP server from the filtered spec and a Discord client."""
     spec = read_spec()
     client = httpx2.AsyncClient(
         base_url=API_ROOT,
-        headers={"Authorization": f"Bot {bot_token()}", "User-Agent": "discord-mcp (1.0)"},
+        headers={
+            "Authorization": f"Bot {bot_token()}",
+            "User-Agent": "discord-mcp (1.0)",
+        },
         timeout=20,
     )
     return FastMCP.from_openapi(
