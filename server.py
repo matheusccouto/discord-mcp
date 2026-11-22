@@ -1,12 +1,7 @@
-"""Discord API exposed as an MCP server.
+"""Discord REST API exposed as an MCP server.
 
-The tool surface comes from Discord's official OpenAPI spec, cut down to whole path
-families: everything under /channels and /users, nothing else. Publishing it on
-FastMCP Gateway adds HTTPS, OAuth and a per-call log; this file only talks to Discord.
-
-Env:
-  DISCORD_BOT_TOKEN  required, read at build time
-  DISCORD_FAMILIES   optional, comma separated path families (default: channels,users)
+Tools are generated from Discord's OpenAPI spec, cut to whole path families. FastMCP
+Gateway serves this behind OAuth; this file only talks to Discord over HTTP.
 """
 
 from __future__ import annotations
@@ -35,25 +30,27 @@ def family_of(route: str) -> str:
 
 def chosen_families(spec: dict) -> list[str]:
     """Return the families to expose, refusing names the spec does not have."""
-    raw = os.environ.get("DISCORD_FAMILIES", "")
-    requested = [name.strip() for name in raw.split(",")]
-    families = [name for name in requested if name]
-    if not families:
+    requested = [
+        name.strip()
+        for name in os.environ.get("DISCORD_FAMILIES", "").split(",")
+        if name.strip()
+    ]
+    if not requested:
         return list(DEFAULT_FAMILIES)
 
-    available = {family_of(route) for route in spec["paths"]}
-    unknown = sorted(set(families) - available)
+    available = sorted({family_of(route) for route in spec["paths"]})
+    unknown = sorted(set(requested) - set(available))
     if unknown:
-        msg = f"unknown DISCORD_FAMILIES {unknown}; available: {sorted(available)}"
+        msg = f"unknown DISCORD_FAMILIES {unknown}; available: {available}"
         raise ValueError(msg)
-    return families
+    return requested
 
 
 def filtered(spec: dict, families: list[str]) -> dict:
     """Return the spec with only the chosen families kept.
 
-    Cutting before parsing also avoids routes FastMCP's validator rejects: Discord
-    ships empty enums under /guilds, so asking for that family fails the build.
+    Cutting before parsing also skips the routes FastMCP's validator rejects:
+    Discord ships empty enums under /guilds.
     """
     spec["paths"] = {
         route: operations
@@ -72,18 +69,9 @@ def bot_token() -> str:
     return token
 
 
-def build(client: httpx2.AsyncClient | None = None) -> FastMCP:
+def build(client: httpx2.AsyncClient) -> FastMCP:
     """Build the MCP server from the filtered spec and a Discord client."""
     spec = read_spec()
-    if client is None:
-        client = httpx2.AsyncClient(
-            base_url=API_ROOT,
-            headers={
-                "Authorization": f"Bot {bot_token()}",
-                "User-Agent": "discord-mcp (1.0)",
-            },
-            timeout=20,
-        )
     return FastMCP.from_openapi(
         openapi_spec=filtered(spec, chosen_families(spec)),
         client=client,
@@ -91,7 +79,16 @@ def build(client: httpx2.AsyncClient | None = None) -> FastMCP:
     )
 
 
-mcp = build()
+mcp = build(
+    httpx2.AsyncClient(
+        base_url=API_ROOT,
+        headers={
+            "Authorization": f"Bot {bot_token()}",
+            "User-Agent": "discord-mcp (1.0)",
+        },
+        timeout=20,
+    )
+)
 
 if __name__ == "__main__":
     mcp.run()  # transport comes from FASTMCP_TRANSPORT; the Gateway injects http

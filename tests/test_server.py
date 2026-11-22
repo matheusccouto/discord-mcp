@@ -42,6 +42,11 @@ DISCORD_MESSAGE = {
 }
 
 
+def unused_client() -> httpx2.AsyncClient:
+    """Return a client a test never calls; build() only needs something to hold."""
+    return httpx2.AsyncClient(base_url=server.API_ROOT)
+
+
 def test_family_of_uses_the_first_segment() -> None:
     """Read the family from the first segment, whatever comes after it."""
     assert server.family_of("/channels/123/messages") == "channels"
@@ -76,7 +81,7 @@ def test_missing_token_refuses_to_build(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.delenv("DISCORD_BOT_TOKEN", raising=False)
 
     with pytest.raises(RuntimeError, match="DISCORD_BOT_TOKEN"):
-        server.build()
+        server.bot_token()
 
 
 async def test_create_message_posts_to_the_channel() -> None:
@@ -89,8 +94,9 @@ async def test_create_message_posts_to_the_channel() -> None:
         seen["body"] = json.loads(request.content)
         return httpx2.Response(200, json=DISCORD_MESSAGE)
 
-    transport = httpx2.MockTransport(handler)
-    client = httpx2.AsyncClient(transport=transport, base_url=server.API_ROOT)
+    client = httpx2.AsyncClient(
+        transport=httpx2.MockTransport(handler), base_url=server.API_ROOT
+    )
 
     async with Client(server.build(client)) as mcp_client:
         await mcp_client.call_tool(
@@ -119,7 +125,7 @@ async def test_narrower_surface_drops_the_other_family(
     """Answer a narrower DISCORD_FAMILIES with fewer tools."""
     monkeypatch.setenv("DISCORD_FAMILIES", "users")
 
-    async with Client(server.build()) as mcp_client:
+    async with Client(server.build(unused_client())) as mcp_client:
         names = {tool.name for tool in await mcp_client.list_tools()}
 
     assert "get_my_user" in names

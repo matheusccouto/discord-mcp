@@ -4,6 +4,6 @@
 a bot token, so the token has to exist first.
 """
 
-import os
+import pytest
 
-os.environ.setdefault("DISCORD_BOT_TOKEN", "test-token")
+pytest.MonkeyPatch().setenv("DISCORD_BOT_TOKEN", "test-token")
