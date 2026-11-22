@@ -4,8 +4,6 @@ Tools are generated from Discord's OpenAPI spec, cut to whole path families. Fas
 Gateway serves this behind OAuth; this file only talks to Discord over HTTP.
 """
 
-from __future__ import annotations
-
 import json
 import os
 from pathlib import Path
