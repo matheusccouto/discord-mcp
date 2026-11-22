@@ -57,15 +57,14 @@ def test_defaults_to_channels_and_users(monkeypatch: pytest.MonkeyPatch) -> None
     """Fall back to the two default families when the variable is unset."""
     monkeypatch.delenv("DISCORD_FAMILIES", raising=False)
 
-    assert server.chosen_families(server.read_spec()) == ["channels", "users"]
+    assert server.families() == ["channels", "users"]
 
 
-def test_unknown_family_reports_what_exists(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Refuse a misspelled family instead of building an empty server."""
-    monkeypatch.setenv("DISCORD_FAMILIES", "chanels")
+def test_default_families_exist_in_the_spec() -> None:
+    """Catch a vendored spec that lost a family the default points at."""
+    available = {server.family_of(route) for route in server.read_spec()["paths"]}
 
-    with pytest.raises(ValueError, match="chanels"):
-        server.chosen_families(server.read_spec())
+    assert {"channels", "users"} <= available
 
 
 def test_filtered_drops_every_other_family() -> None:
@@ -80,7 +79,7 @@ def test_missing_token_refuses_to_build(monkeypatch: pytest.MonkeyPatch) -> None
     """Refuse to start without a bot token, rather than fail on the first call."""
     monkeypatch.delenv("DISCORD_BOT_TOKEN", raising=False)
 
-    with pytest.raises(RuntimeError, match="DISCORD_BOT_TOKEN"):
+    with pytest.raises(KeyError, match="DISCORD_BOT_TOKEN"):
         server.bot_token()
 
 

@@ -15,7 +15,7 @@ from fastmcp import FastMCP
 
 SPEC_PATH = Path(__file__).with_name("discord-openapi.json")
 API_ROOT = "https://discord.com/api/v10"
-DEFAULT_FAMILIES = ("channels", "users")
+DEFAULT_FAMILIES = "channels,users"
 
 
 def read_spec() -> dict:
@@ -28,22 +28,9 @@ def family_of(route: str) -> str:
     return route.strip("/").split("/")[0]
 
 
-def chosen_families(spec: dict) -> list[str]:
-    """Return the families to expose, refusing names the spec does not have."""
-    requested = [
-        name.strip()
-        for name in os.environ.get("DISCORD_FAMILIES", "").split(",")
-        if name.strip()
-    ]
-    if not requested:
-        return list(DEFAULT_FAMILIES)
-
-    available = sorted({family_of(route) for route in spec["paths"]})
-    unknown = sorted(set(requested) - set(available))
-    if unknown:
-        msg = f"unknown DISCORD_FAMILIES {unknown}; available: {available}"
-        raise ValueError(msg)
-    return requested
+def families() -> list[str]:
+    """Return the families to expose: DISCORD_FAMILIES, or the default."""
+    return os.environ.get("DISCORD_FAMILIES", DEFAULT_FAMILIES).split(",")
 
 
 def filtered(spec: dict, families: list[str]) -> dict:
@@ -61,19 +48,15 @@ def filtered(spec: dict, families: list[str]) -> dict:
 
 
 def bot_token() -> str:
-    """Return the bot token, refusing to run without one."""
-    token = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
-    if not token:
-        msg = "DISCORD_BOT_TOKEN is not set"
-        raise RuntimeError(msg)
-    return token
+    """Return the bot token from the environment; KeyError says what is missing."""
+    return os.environ["DISCORD_BOT_TOKEN"]
 
 
 def build(client: httpx2.AsyncClient) -> FastMCP:
     """Build the MCP server from the filtered spec and a Discord client."""
     spec = read_spec()
     return FastMCP.from_openapi(
-        openapi_spec=filtered(spec, chosen_families(spec)),
+        openapi_spec=filtered(spec, families()),
         client=client,
         name="discord",
     )

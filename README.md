@@ -7,7 +7,7 @@ Discord's REST API as an MCP server, generated from
 
 `/channels` and `/users` only: 62 tools. Everything else — guilds, applications,
 webhooks, invites — stays out. Change the families with `DISCORD_FAMILIES`, comma
-separated. A name the spec does not have fails the build.
+separated; the first segment of a route is its family.
 
 ## Run
 
