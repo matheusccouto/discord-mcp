@@ -28,12 +28,13 @@ replace the file; the filter runs at startup.
 ## Run locally
 
 ```bash
-python -m venv .venv
-.venv/bin/pip install -r requirements.txt
-DISCORD_BOT_TOKEN=... FASTMCP_TRANSPORT=http .venv/bin/python server.py
+uv sync
+DISCORD_BOT_TOKEN=... uv run fastmcp run fastmcp.json --transport http
 ```
 
-`fastmcp inspect server.py:mcp` lists the tools without calling Discord.
+`fastmcp.json` is the project entry: `server.py`, object `mcp`, environment from
+`pyproject.toml` through uv. `uv run fastmcp inspect fastmcp.json` lists the tools
+without calling Discord.
 
 ## Deploy on FastMCP Gateway
 

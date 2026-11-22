@@ -1,0 +1,6 @@
+[project]
+name = "discord-mcp"
+version = "0.1.0"
+description = "Discord REST API as an MCP server"
+requires-python = ">=3.11"
+dependencies = ["fastmcp>=4.2", "httpx2>=2.16"]
