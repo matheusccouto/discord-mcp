@@ -5,9 +5,9 @@ Discord's REST API as an MCP server, generated from
 
 ## Surface
 
-`/channels` and `/users` only: 62 tools. Everything else — guilds, applications,
-webhooks, invites — stays out. Change the families with `DISCORD_FAMILIES`, comma
-separated; the first segment of a route is its family.
+`/channels` and `/users`: 62 tools. Guilds, applications, webhooks and invites stay
+out. Change the families with `DISCORD_FAMILIES`, comma separated; the first segment
+of a route is its family.
 
 ## Run
 
@@ -17,15 +17,26 @@ uv sync
 uv run --env-file .env fastmcp run fastmcp.json --transport http
 ```
 
+## Authenticate
+
+Without credentials the server is open, which is what a local run and
+[FastMCP Gateway](https://docs.horizon.prefect.io/) want: the Gateway brings its own
+OAuth. For a host without one, set these four and every `/mcp` request needs a login:
+
+- `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`: an OAuth app whose callback is
+  `PUBLIC_URL/auth/callback`
+- `JWT_SIGNING_KEY`: `openssl rand -hex 32`
+- `PUBLIC_URL`: the deployment origin, no trailing slash
+
+The server then answers as the authorization server for MCP clients: discovery,
+dynamic registration, PKCE, and a 401 challenge on every method of `/mcp`.
+
 ## Deploy
 
-`server.py` exports `app = mcp.http_app()`, and the transport answers at `/mcp`, so
-any ASGI host serves it. On Vercel, leave Build Command and Install Command empty.
+`server.py` exports `app`, an ASGI app answering at `/mcp`, so any ASGI host serves
+it. On Vercel, leave Build Command, Install Command and Output Directory empty.
 
-Point [FastMCP Gateway](https://gofastmcp.com/docs/deployment/fastmcp-gateway) at this
-repository and set `DISCORD_BOT_TOKEN` as a secret. The Gateway serves it over HTTPS
-behind OAuth, so a client connects by URL and signs in with the Gateway account. The
-bot token stays in the environment.
+## Bot permissions
 
-The bot needs View Channels, Send Messages and Read Message History. It reaches every
-channel those permissions allow.
+View Channels, Send Messages, Read Message History, and whatever else the tools you
+use require. The bot reads exactly the channels those permissions allow.

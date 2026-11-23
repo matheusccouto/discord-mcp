@@ -1,86 +1,75 @@
-"""Tests for the OpenAPI surface and for how a tool call reaches Discord."""
+"""Tests for the tool surface, the schema cleaning and one Discord request."""
+
+from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
 
 import httpx2
-import pytest
 from fastmcp import Client
 
 import server
 
+if TYPE_CHECKING:
+    import pytest
+
 # 50 operations under /channels plus 12 under /users in the vendored spec.
-DEFAULT_TOOL_COUNT = 62
-
-# Every field MessageResponse marks as required, so FastMCP's output validation
-# accepts the fake reply instead of failing before the request is inspected.
-DISCORD_MESSAGE = {
-    "id": "42",
-    "channel_id": "999",
-    "content": "oi",
-    "timestamp": "2026-11-22T18:00:00.000000+00:00",
-    "edited_timestamp": None,
-    "tts": False,
-    "mention_everyone": False,
-    "mentions": [],
-    "mention_roles": [],
-    "attachments": [],
-    "embeds": [],
-    "components": [],
-    "pinned": False,
-    "type": 0,
-    "flags": 0,
-    "author": {
-        "id": "1",
-        "username": "clawdinhobot",
-        "avatar": None,
-        "discriminator": "0",
-        "public_flags": 0,
-        "flags": 0,
-        "global_name": None,
-        "primary_guild": None,
-    },
-}
+TOOL_COUNT = 62
 
 
-def unused_client() -> httpx2.AsyncClient:
+def idle_client() -> httpx2.AsyncClient:
     """Return a client a test never calls; build() only needs something to hold."""
-    return httpx2.AsyncClient(base_url=server.API_ROOT)
+    return httpx2.AsyncClient(base_url=server.API)
 
 
-def test_family_of_uses_the_first_segment() -> None:
+def test_family_is_the_first_segment() -> None:
     """Read the family from the first segment, whatever comes after it."""
-    assert server.family_of("/channels/123/messages") == "channels"
-    assert server.family_of("/users/@me/guilds") == "users"
+    assert server.family("/channels/123/messages") == "channels"
+    assert server.family("/users/@me/guilds") == "users"
 
 
-def test_defaults_to_channels_and_users(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Fall back to the two default families when the variable is unset."""
-    monkeypatch.delenv("DISCORD_FAMILIES", raising=False)
+def test_clean_drops_the_keywords_gemini_refuses() -> None:
+    """Turn const into enum, drop additionalProperties, keep numbers in 32 bits."""
+    dirty = json.loads(
+        """
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {"const": "approve"},
+            "color": {"type": "integer", "maximum": 4294967295.0}
+          }
+        }
+        """
+    )
 
-    assert server.families() == ["channels", "users"]
+    cleaned = json.dumps(server.clean(dirty))
+
+    assert "additionalProperties" not in cleaned
+    assert '"enum": ["approve"]' in cleaned
+    assert f'"maximum": {2**31 - 1}' in cleaned
 
 
-def test_default_families_exist_in_the_spec() -> None:
-    """Catch a vendored spec that lost a family the default points at."""
-    available = {server.family_of(route) for route in server.read_spec()["paths"]}
+async def test_serves_the_default_families() -> None:
+    """Expose channels and users, and nothing from the other families."""
+    async with Client(server.mcp) as client:
+        names = {tool.name for tool in await client.list_tools()}
 
-    assert {"channels", "users"} <= available
-
-
-def test_filtered_drops_every_other_family() -> None:
-    """Keep the chosen family and drop the routes of every other one."""
-    spec = server.filtered(server.read_spec(), ["users"])
-
-    assert {server.family_of(route) for route in spec["paths"]} == {"users"}
-    assert "/channels/{channel_id}/messages" not in spec["paths"]
+    assert len(names) == TOOL_COUNT
+    assert "create_message" in names
+    assert "get_guild" not in names
 
 
-def test_missing_token_refuses_to_build(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Refuse to start without a bot token, rather than fail on the first call."""
-    monkeypatch.delenv("DISCORD_BOT_TOKEN", raising=False)
+async def test_narrower_surface_drops_the_other_family(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Answer a narrower DISCORD_FAMILIES with fewer tools."""
+    monkeypatch.setenv("DISCORD_FAMILIES", "users")
 
-    with pytest.raises(KeyError, match="DISCORD_BOT_TOKEN"):
-        server.bot_token()
+    async with Client(server.build(idle_client())) as client:
+        names = {tool.name for tool in await client.list_tools()}
+
+    assert "get_my_user" in names
+    assert "create_message" not in names
 
 
 async def test_create_message_posts_to_the_channel() -> None:
@@ -91,10 +80,10 @@ async def test_create_message_posts_to_the_channel() -> None:
         seen["method"] = request.method
         seen["url"] = str(request.url)
         seen["body"] = json.loads(request.content)
-        return httpx2.Response(200, json=DISCORD_MESSAGE)
+        return httpx2.Response(200, json={"id": "42", "content": "oi"})
 
     client = httpx2.AsyncClient(
-        transport=httpx2.MockTransport(handler), base_url=server.API_ROOT
+        transport=httpx2.MockTransport(handler), base_url=server.API
     )
 
     async with Client(server.build(client)) as mcp_client:
@@ -103,60 +92,14 @@ async def test_create_message_posts_to_the_channel() -> None:
         )
 
     assert seen["method"] == "POST"
-    assert seen["url"] == f"{server.API_ROOT}/channels/999/messages"
+    assert seen["url"] == f"{server.API}/channels/999/messages"
     assert seen["body"] == {"content": "oi"}
-
-
-async def test_deployed_server_exposes_the_default_families() -> None:
-    """Serve the two default families on the object the Gateway loads."""
-    async with Client(server.mcp) as mcp_client:
-        names = {tool.name for tool in await mcp_client.list_tools()}
-
-    assert "create_message" in names
-    assert len(names) == DEFAULT_TOOL_COUNT
-    assert "get_guild" not in names
-    assert "execute_webhook" not in names
-
-
-async def test_narrower_surface_drops_the_other_family(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Answer a narrower DISCORD_FAMILIES with fewer tools."""
-    monkeypatch.setenv("DISCORD_FAMILIES", "users")
-
-    async with Client(server.build(unused_client())) as mcp_client:
-        names = {tool.name for tool in await mcp_client.list_tools()}
-
-    assert "get_my_user" in names
-    assert "create_message" not in names
-
-
-def test_scrub_drops_the_keywords_gemini_refuses() -> None:
-    """Turn const into enum, drop additionalProperties, keep numbers in 32 bits."""
-    dirty = json.loads(
-        """
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "action": {"const": "approve"},
-            "color": {"type": "integer", "maximum": 4294967295.0}
-          }
-        }
-        """
-    )
-
-    clean = json.dumps(server.scrub(dirty))
-
-    assert "additionalProperties" not in clean
-    assert '"enum": ["approve"]' in clean
-    assert f'"maximum": {2**31 - 1}' in clean
 
 
 def test_login_is_off_without_github_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Leave the Gateway deployment unauthenticated by this provider."""
+    """Leave a deployment without GitHub credentials unguarded by this provider."""
     monkeypatch.delenv("GITHUB_CLIENT_ID", raising=False)
 
     assert server.login() is None

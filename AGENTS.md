@@ -3,7 +3,7 @@
 ## Commands
 
 - `uv run fastmcp inspect fastmcp.json`: list the exposed tools without calling Discord.
-- `uv run pytest`: 8 tests, no network.
+- `uv run pytest`: 6 tests, no network.
 - `uvx ruff check .` and `uvx ruff format --check .`
 - `uvx ty check`
 
