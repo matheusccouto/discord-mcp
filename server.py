@@ -9,14 +9,23 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx2
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.github import GitHubProvider
 from fastmcp.server.providers.openapi.components import OpenAPITool
+from starlette.responses import Response
+
+if TYPE_CHECKING:
+    from starlette.types import ASGIApp, Receive, Scope, Send
 
 SPEC_PATH = Path(__file__).with_name("discord-openapi.json")
+PUBLIC = os.environ.get("PUBLIC_URL", "https://login.invalid")
+CHALLENGE = (
+    f'Bearer resource_metadata="{PUBLIC}/.well-known/oauth-protected-resource/mcp"'
+)
+
 API_ROOT = "https://discord.com/api/v10"
 DEFAULT_FAMILIES = "channels,users"
 
@@ -130,7 +139,26 @@ mcp = build(
     )
 )
 
-app = mcp.http_app(stateless_http=True)  # Vercel loads `app`; no session kept in memory
+
+class RequireAuth:
+    """Answer 401 on /mcp for every method when the request has no credentials."""
+
+    def __init__(self, inner: ASGIApp) -> None:
+        """Keep the app to fall through to."""
+        self.inner = inner
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Return the challenge, or hand the request over."""
+        if scope["type"] == "http" and scope["path"].startswith("/mcp"):
+            names = {name.lower() for name, _ in scope["headers"]}
+            if b"authorization" not in names:
+                response = Response("", 401, {"WWW-Authenticate": CHALLENGE})
+                await response(scope, receive, send)
+                return
+        await self.inner(scope, receive, send)
+
+
+app = RequireAuth(mcp.http_app(stateless_http=True))  # Vercel loads `app`
 
 if __name__ == "__main__":
     mcp.run()  # transport comes from FASTMCP_TRANSPORT; the Gateway injects http
