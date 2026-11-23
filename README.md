@@ -19,6 +19,9 @@ uv run --env-file .env fastmcp run fastmcp.json --transport http
 
 ## Deploy
 
+`server.py` exports `app = mcp.http_app()`, and the transport answers at `/mcp`, so
+any ASGI host serves it. On Vercel, leave Build Command and Install Command empty.
+
 Point [FastMCP Gateway](https://gofastmcp.com/docs/deployment/fastmcp-gateway) at this
 repository and set `DISCORD_BOT_TOKEN` as a secret. The Gateway serves it over HTTPS
 behind OAuth, so a client connects by URL and signs in with the Gateway account. The
