@@ -4,9 +4,12 @@ Tools are generated from Discord's OpenAPI spec, cut to whole path families. Fas
 Gateway serves this behind OAuth; this file only talks to Discord over HTTP.
 """
 
+from __future__ import annotations
+
 import json
 import os
 from pathlib import Path
+from typing import Any, cast
 
 import httpx2
 from fastmcp import FastMCP
@@ -50,11 +53,41 @@ def bot_token() -> str:
     return os.environ["DISCORD_BOT_TOKEN"]
 
 
+GEMINI_REJECTS = frozenset({"$schema", "additionalProperties", "$defs", "const"})
+INT32 = 2**31 - 1
+
+type JSON = dict[str, JSON] | list[JSON] | str | int | float | bool | None
+
+
+def scrub(schema: JSON) -> JSON:
+    """Return the schema without the keywords the Gemini connector refuses.
+
+    The connector fails registration on ``$schema``, ``additionalProperties``,
+    ``$defs`` and ``const``, so a ``const`` becomes a one-value ``enum`` and the rest
+    is dropped. Integer bounds are clamped to 32 bits and made ints.
+    """
+    if isinstance(schema, list):
+        return [scrub(item) for item in schema]
+    if not isinstance(schema, dict):
+        return schema
+
+    clean = {
+        key: scrub(value) for key, value in schema.items() if key not in GEMINI_REJECTS
+    }
+    if "const" in schema:
+        clean["enum"] = [schema["const"]]
+    for bound in ("maximum", "minimum"):
+        value = clean.get(bound)
+        if isinstance(value, float):
+            clean[bound] = int(min(max(value, -INT32), INT32))
+    return clean
+
+
 def build(client: httpx2.AsyncClient) -> FastMCP:
     """Build the MCP server from the filtered spec and a Discord client."""
     spec = read_spec()
     return FastMCP.from_openapi(
-        openapi_spec=filtered(spec, families()),
+        openapi_spec=cast("dict[str, Any]", scrub(filtered(spec, families()))),
         client=client,
         name="discord",
     )
