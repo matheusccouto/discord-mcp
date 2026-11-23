@@ -129,3 +129,25 @@ async def test_narrower_surface_drops_the_other_family(
 
     assert "get_my_user" in names
     assert "create_message" not in names
+
+
+def test_scrub_drops_the_keywords_gemini_refuses() -> None:
+    """Turn const into enum, drop additionalProperties, keep numbers in 32 bits."""
+    dirty = json.loads(
+        """
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "action": {"const": "approve"},
+            "color": {"type": "integer", "maximum": 4294967295.0}
+          }
+        }
+        """
+    )
+
+    clean = json.dumps(server.scrub(dirty))
+
+    assert "additionalProperties" not in clean
+    assert '"enum": ["approve"]' in clean
+    assert f'"maximum": {2**31 - 1}' in clean
