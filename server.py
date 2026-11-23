@@ -71,5 +71,7 @@ mcp = build(
     )
 )
 
+app = mcp.http_app()  # ASGI entrypoint: Vercel loads `app` from server.py
+
 if __name__ == "__main__":
     mcp.run()  # transport comes from FASTMCP_TRANSPORT; the Gateway injects http
