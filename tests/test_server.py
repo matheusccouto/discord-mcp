@@ -151,3 +151,12 @@ def test_scrub_drops_the_keywords_gemini_refuses() -> None:
     assert "additionalProperties" not in clean
     assert '"enum": ["approve"]' in clean
     assert f'"maximum": {2**31 - 1}' in clean
+
+
+def test_login_is_off_without_github_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Leave the Gateway deployment unauthenticated by this provider."""
+    monkeypatch.delenv("GITHUB_CLIENT_ID", raising=False)
+
+    assert server.login() is None
