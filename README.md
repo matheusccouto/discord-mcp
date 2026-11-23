@@ -25,11 +25,15 @@ OAuth. For a host without one, set these four and every `/mcp` request needs a l
 
 - `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`: an OAuth app whose callback is
   `PUBLIC_URL/auth/callback`
+- `GITHUB_LOGIN`: the only GitHub account allowed in; anyone else can finish the login
+  and still gets nothing
 - `JWT_SIGNING_KEY`: `openssl rand -hex 32`
 - `PUBLIC_URL`: the deployment origin, no trailing slash
 
 The server then answers as the authorization server for MCP clients: discovery,
-dynamic registration, PKCE, and a 401 challenge on every method of `/mcp`.
+dynamic registration, PKCE, and a 401 challenge on every method of `/mcp`. Tokens
+last a week and there is no refresh, so the client signs in again when one expires.
+`JWT_SIGNING_KEY` signs them: rotating it logs everyone out.
 
 ## Deploy
 

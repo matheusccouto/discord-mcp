@@ -13,8 +13,8 @@ import server
 if TYPE_CHECKING:
     import pytest
 
-# 50 operations under /channels plus 12 under /users in the vendored spec.
-TOOL_COUNT = 62
+# 50 operations under /channels and 12 under /users, less the six DENIED ones.
+TOOL_COUNT = 56
 
 
 def idle_client() -> httpx2.AsyncClient:
@@ -57,6 +57,14 @@ async def test_serves_the_default_families() -> None:
     assert len(names) == TOOL_COUNT
     assert "create_message" in names
     assert "get_guild" not in names
+
+
+async def test_leaves_the_dangerous_operations_out() -> None:
+    """Refuse the tools a message could talk the model into using against the user."""
+    async with Client(server.mcp) as client:
+        names = {tool.name for tool in await client.list_tools()}
+
+    assert not names & server.DENIED
 
 
 async def test_narrower_surface_drops_the_other_family(

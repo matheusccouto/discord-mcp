@@ -25,8 +25,19 @@ SPEC = Path(__file__).with_name("discord-openapi.json")
 API = "https://discord.com/api/v10"
 FAMILIES = "channels,users"
 REJECTED = frozenset({"$schema", "additionalProperties", "$defs", "const"})
+DENIED = frozenset(
+    {
+        "bulk_delete_messages",
+        "create_dm",
+        "delete_channel",
+        "leave_guild",
+        "set_channel_permission_overwrite",
+        "update_my_user",
+    }
+)
 INT32 = 2**31 - 1
 METADATA = "/.well-known/oauth-protected-resource/mcp"
+WEEK = 7 * 24 * 60 * 60
 
 type JSON = dict[str, JSON] | list[JSON] | str | int | float | bool | None
 
@@ -66,15 +77,39 @@ def gemini_safe(_route: object, tool: object) -> None:
         tool.output_schema = None
 
 
-def login() -> GitHubProvider | None:
+class NotTheOwnerError(Exception):
+    """Raised when a finished login belongs to someone other than the owner."""
+
+
+class OwnerOnly(GitHubProvider):
+    """Let one GitHub account in; anyone else finishes the login and gets nothing."""
+
+    async def _extract_upstream_claims(
+        self,
+        idp_tokens: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Ask GitHub whose token it is, and refuse anyone but the owner."""
+        async with httpx2.AsyncClient(timeout=10) as http:
+            who = await http.get(
+                "https://api.github.com/user",
+                headers={"Authorization": f"Bearer {idp_tokens['access_token']}"},
+            )
+        login = who.json()["login"]
+        if login.casefold() != os.environ["GITHUB_LOGIN"].casefold():
+            raise NotTheOwnerError(login)
+        return {"login": login}
+
+
+def login() -> OwnerOnly | None:
     """Return the GitHub login, or nothing when its credentials are absent."""
     if not os.environ.get("GITHUB_CLIENT_ID"):
         return None
-    return GitHubProvider(
+    return OwnerOnly(
         client_id=os.environ["GITHUB_CLIENT_ID"],
         client_secret=os.environ["GITHUB_CLIENT_SECRET"],
         base_url=os.environ["PUBLIC_URL"],
         jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
+        fastmcp_access_token_expiry_seconds=WEEK,
     )
 
 
@@ -83,7 +118,12 @@ def build(client: httpx2.AsyncClient) -> FastMCP:
     spec = json.loads(SPEC.read_text())
     keep = os.environ.get("DISCORD_FAMILIES", FAMILIES).split(",")
     spec["paths"] = {
-        route: operations
+        route: {
+            method: operation
+            for method, operation in operations.items()
+            if not isinstance(operation, dict)
+            or operation.get("operationId") not in DENIED
+        }
         for route, operations in spec["paths"].items()
         if family(route) in keep
     }
