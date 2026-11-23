@@ -1,19 +1,28 @@
 """Discord REST API exposed as an MCP server.
 
-Tools are generated from Discord's OpenAPI spec, cut to whole path families. FastMCP
-Gateway serves this behind OAuth; this file only talks to Discord over HTTP.
+Tools are generated from Discord's OpenAPI spec, cut to whole path families. The
+server answers only when the URL carries the shared key; the Gemini connector can
+send nothing else.
 """
 
 import json
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import httpx2
 from fastmcp import FastMCP
+from fastmcp.server.dependencies import get_http_request
+from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
+from mcp.shared.exceptions import MCPError
+
+if TYPE_CHECKING:
+    from mcp.types import Request
 
 SPEC_PATH = Path(__file__).with_name("discord-openapi.json")
 API_ROOT = "https://discord.com/api/v10"
 DEFAULT_FAMILIES = "channels,users"
+UNAUTHORIZED = 401
 
 
 def read_spec() -> dict:
@@ -50,6 +59,29 @@ def bot_token() -> str:
     return os.environ["DISCORD_BOT_TOKEN"]
 
 
+class KeyGate(Middleware):
+    """Refuse any request whose URL does not carry the shared key."""
+
+    async def on_request(
+        self,
+        context: MiddlewareContext[Request],
+        call_next: CallNext[Request, object],
+    ) -> object:
+        """Compare the key on the request URL, then hand the call over.
+
+        In-memory transports have no URL, so there is nothing to compare and the
+        call goes through: only a network caller can be gated.
+        """
+        try:
+            request = get_http_request()
+        except RuntimeError:
+            return await call_next(context)
+        if request.query_params.get("key") != os.environ["MCP_KEY"]:
+            msg = "unauthorized: connect with ?key=<MCP_KEY> on the server URL"
+            raise MCPError(UNAUTHORIZED, msg)
+        return await call_next(context)
+
+
 def build(client: httpx2.AsyncClient) -> FastMCP:
     """Build the MCP server from the filtered spec and a Discord client."""
     spec = read_spec()
@@ -57,6 +89,7 @@ def build(client: httpx2.AsyncClient) -> FastMCP:
         openapi_spec=filtered(spec, families()),
         client=client,
         name="discord",
+        middleware=[KeyGate()],
     )
 
 

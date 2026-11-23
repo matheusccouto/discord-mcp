@@ -1,10 +1,13 @@
 """Tests for the OpenAPI surface and for how a tool call reaches Discord."""
 
 import json
+from typing import TYPE_CHECKING, cast
 
 import httpx2
 import pytest
 from fastmcp import Client
+from fastmcp.server.middleware import MiddlewareContext
+from mcp.shared.exceptions import MCPError
 
 import server
 
@@ -129,3 +132,54 @@ async def test_narrower_surface_drops_the_other_family(
 
     assert "get_my_user" in names
     assert "create_message" not in names
+
+
+from mcp.types import Request
+
+CONTEXT = cast(MiddlewareContext[Request], MiddlewareContext(message=None))
+
+
+class FakeRequest:
+    """Stand-in for the Starlette request, carrying only the query params."""
+
+    def __init__(self, params: dict[str, str]) -> None:
+        """Keep the params a test wants the gate to see."""
+        self.query_params = params
+
+
+async def passthrough(context: MiddlewareContext[Request]) -> str:
+    """Stand-in for the rest of the chain; ignores what it receives."""
+    del context
+    return "handled"
+
+
+async def test_gate_refuses_a_url_without_the_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject a call whose URL carries no key."""
+    monkeypatch.setenv("MCP_KEY", "s3cret")
+    monkeypatch.setattr(server, "get_http_request", lambda: FakeRequest({}))
+
+    with pytest.raises(MCPError):
+        await server.KeyGate().on_request(CONTEXT, passthrough)
+
+
+async def test_gate_refuses_a_wrong_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reject a call whose URL carries another key."""
+    monkeypatch.setenv("MCP_KEY", "s3cret")
+    monkeypatch.setattr(
+        server, "get_http_request", lambda: FakeRequest({"key": "nope"})
+    )
+
+    with pytest.raises(MCPError):
+        await server.KeyGate().on_request(CONTEXT, passthrough)
+
+
+async def test_gate_lets_the_right_key_through(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Hand a call over when the URL carries the key."""
+    monkeypatch.setenv("MCP_KEY", "s3cret")
+    monkeypatch.setattr(
+        server, "get_http_request", lambda: FakeRequest({"key": "s3cret"})
+    )
+
+    assert await server.KeyGate().on_request(CONTEXT, passthrough) == "handled"
