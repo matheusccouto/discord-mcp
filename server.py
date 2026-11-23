@@ -76,8 +76,8 @@ class KeyGate(Middleware):
             request = get_http_request()
         except RuntimeError:
             return await call_next(context)
-        if request.query_params.get("key") != os.environ["MCP_KEY"]:
-            msg = "unauthorized: connect with ?key=<MCP_KEY> on the server URL"
+        if request.query_params.get("token") != os.environ["MCP_TOKEN"]:
+            msg = "unauthorized: connect with ?token=<MCP_TOKEN> on the server URL"
             raise MCPError(UNAUTHORIZED, msg)
         return await call_next(context)
 
