@@ -13,6 +13,7 @@ from typing import Any, cast
 
 import httpx2
 from fastmcp import FastMCP
+from fastmcp.server.auth.providers.github import GitHubProvider
 from fastmcp.server.providers.openapi.components import OpenAPITool
 
 SPEC_PATH = Path(__file__).with_name("discord-openapi.json")
@@ -93,6 +94,18 @@ def gemini_safe(_route: object, component: object) -> None:
         component.output_schema = cast("dict[str, Any]", scrub(component.output_schema))
 
 
+def login() -> GitHubProvider | None:
+    """Return the GitHub login, or nothing when its credentials are absent."""
+    if not os.environ.get("GITHUB_CLIENT_ID"):
+        return None
+    return GitHubProvider(
+        client_id=os.environ["GITHUB_CLIENT_ID"],
+        client_secret=os.environ["GITHUB_CLIENT_SECRET"],
+        base_url=os.environ["PUBLIC_URL"],
+        jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
+    )
+
+
 def build(client: httpx2.AsyncClient) -> FastMCP:
     """Build the MCP server from the filtered spec and a Discord client."""
     spec = read_spec()
@@ -102,6 +115,7 @@ def build(client: httpx2.AsyncClient) -> FastMCP:
         name="discord",
         mcp_component_fn=gemini_safe,
         validate_output=False,
+        auth=login(),
     )
 
 
