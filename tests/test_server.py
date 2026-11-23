@@ -1,14 +1,16 @@
 """Tests for the OpenAPI surface and for how a tool call reaches Discord."""
 
 import json
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import httpx2
 import pytest
 from fastmcp import Client
 from fastmcp.server.middleware import MiddlewareContext
 from mcp.shared.exceptions import MCPError
-from mcp.types import Request
+
+if TYPE_CHECKING:
+    from mcp.types import Request
 
 import server
 
