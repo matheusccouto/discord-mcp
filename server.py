@@ -13,6 +13,7 @@ from typing import Any, cast
 
 import httpx2
 from fastmcp import FastMCP
+from fastmcp.server.providers.openapi.components import OpenAPITool
 
 SPEC_PATH = Path(__file__).with_name("discord-openapi.json")
 API_ROOT = "https://discord.com/api/v10"
@@ -83,6 +84,15 @@ def scrub(schema: JSON) -> JSON:
     return clean
 
 
+def gemini_safe(_route: object, component: object) -> None:
+    """Scrub what the Gemini connector refuses, from both of a tool's schemas."""
+    if not isinstance(component, OpenAPITool):
+        return
+    component.parameters = cast("dict[str, Any]", scrub(component.parameters))
+    if component.output_schema:
+        component.output_schema = cast("dict[str, Any]", scrub(component.output_schema))
+
+
 def build(client: httpx2.AsyncClient) -> FastMCP:
     """Build the MCP server from the filtered spec and a Discord client."""
     spec = read_spec()
@@ -90,6 +100,8 @@ def build(client: httpx2.AsyncClient) -> FastMCP:
         openapi_spec=cast("dict[str, Any]", scrub(filtered(spec, families()))),
         client=client,
         name="discord",
+        mcp_component_fn=gemini_safe,
+        validate_output=False,
     )
 
 
