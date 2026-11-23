@@ -130,7 +130,7 @@ mcp = build(
     )
 )
 
-app = mcp.http_app()  # ASGI entrypoint: Vercel loads `app` from server.py
+app = mcp.http_app(stateless_http=True)  # Vercel loads `app`; no session kept in memory
 
 if __name__ == "__main__":
     mcp.run()  # transport comes from FASTMCP_TRANSPORT; the Gateway injects http
