@@ -3,7 +3,8 @@
 ## Commands
 
 - `uv run fastmcp inspect fastmcp.json`: list the exposed tools without calling Discord.
-- `uv run pytest`: 7 tests, no network.
+- `env -u PYTHONPATH uv run --project . pytest`: 7 tests, no network. The ambient
+  `PYTHONPATH` points at another venv and shadows this one's `mcp`.
 - `uvx ruff check .` and `uvx ruff format --check .`
 - `uvx ty check`
 
