@@ -110,6 +110,7 @@ def login() -> OwnerOnly | None:
         base_url=os.environ["PUBLIC_URL"],
         jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
         fastmcp_access_token_expiry_seconds=WEEK,
+        required_scopes=["read:user"],
     )
 
 
